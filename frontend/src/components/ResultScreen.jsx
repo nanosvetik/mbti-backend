@@ -51,7 +51,7 @@ const ResultScreen = ({ result, user }) => {
                     onClick={() => window.location.reload()}
                     className="mt-8 text-green-600 hover:text-green-800 font-medium hover:underline"
                 >
-                    Пройти тест заново
+                    На главную
                 </button>
             </div>
         </div>
