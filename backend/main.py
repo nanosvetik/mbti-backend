@@ -40,6 +40,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://192.168.0.105:5173",
+        "https://frontend-one-ebon-2mxpz6klja.vercel.app",
         "https://mbti-agent-sveta.vercel.app",  # Ваш новый фронтенд!
     ],
     allow_credentials=True,
