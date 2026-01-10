@@ -54,6 +54,8 @@ class ChatMessage(Base):
     user_id = Column(String, ForeignKey("users.id"))
     role = Column(String)  # "user" или "assistant"
     content = Column(Text)
+    # НОВАЯ СТРОКА ТУТ:
+    chat_type = Column(String, default="text")  # "text" для Алекса, "voice" для Марины
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="chat_messages")

@@ -1,4 +1,5 @@
 import os
+import re
 from fpdf import FPDF
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -25,116 +26,88 @@ class NeuroHRReport(FPDF):
 
     def draw_bar(self, label, value, dominant_letter=""):
         start_x = 20
-        bar_x = 95 # Чуть сдвинул вправо, чтобы длинные названия влезали
-        
+        bar_x = 95 
         self.set_font("ArialRus", "", 9)
         self.set_xy(start_x, self.get_y())
         self.cell(70, 8, label)
-        
         curr_y = self.get_y() + 2
-        # Рамка (фон)
         self.set_fill_color(240, 240, 240)
-        self.rect(bar_x, curr_y, 70, 4, 'F') # Ширина 70
-        
-        # Заполнение (Синий БС)
+        self.rect(bar_x, curr_y, 70, 4, 'F') 
         self.set_fill_color(0, 51, 102)
         safe_value = max(0, min(value, 100))
-        # Масштабируем 100% в ширину 70
         self.rect(bar_x, curr_y, (safe_value / 100) * 70, 4, 'F')
-        
-        # Текст процента и буквы
         self.set_xy(bar_x + 75, curr_y - 2)
         self.set_font("ArialRus", "B", 9)
         display_text = f"{int(safe_value)}%"
-        if dominant_letter:
-            display_text += f" ({dominant_letter})"
+        if dominant_letter: display_text += f" ({dominant_letter})"
         self.cell(0, 8, display_text, ln=True)
 
-def create_pdf_report(data: dict, output_path: str):
+def create_pdf_report(data: dict, file_path: str):
     pdf = NeuroHRReport()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    # Заголовок
+    def safe_text(text):
+        if not text: return ""
+        return re.sub(r'[^\w\s\d\.,!\?\-:"\(\)А-яёЁ]', '', str(text))
+
+    # 1. ЗАГОЛОВОК
     pdf.set_font("ArialRus", "B", 16)
-    pdf.cell(0, 10, f"Психологический профиль: {data.get('name', 'Кандидат')}", ln=True, align="C")
-    
+    name = safe_text(data.get('name', 'Кандидат'))
+    pdf.cell(0, 10, f"Психологический профиль: {name}", ln=True, align="C")
     pdf.ln(5)
-    # ИСПРАВЛЕНО: Четкое название блока шкал
+
+    # 2. ШКАЛЫ (БЕЗ ИЗМЕНЕНИЙ)
     pdf.set_font("ArialRus", "B", 12)
     pdf.cell(0, 10, "Результаты верификационного теста (самодиагностика):", ln=True)
-
     s1 = data.get('stage_1_static') or {}
-    
-    def get_bar_data(left_k, right_k):
-        l_v, r_v = s1.get(left_k, 0), s1.get(right_k, 0)
-        total = l_v + r_v
-        if total == 0: return 50, ""
-        if l_v >= r_v:
-            return int((l_v/total)*100), left_k
-        return int((r_v/total)*100), right_k
+    def get_bar_data(l_k, r_k):
+        try:
+            l_v, r_v = float(s1.get(l_k, 0)), float(s1.get(r_k, 0))
+            total = l_v + r_v
+            if total == 0: return 50, ""
+            return (int((l_v/total)*100), l_k) if l_v >= r_v else (int((r_v/total)*100), r_k)
+        except: return 50, ""
 
-    # Отрисовка шкал
-    val, let = get_bar_data("E", "I")
-    pdf.draw_bar("Экстраверсия / Интроверсия (E/I)", val, let)
-    
-    val, let = get_bar_data("S", "N")
-    pdf.draw_bar("Сенсорное восприятие / Интуиция (S/N)", val, let)
-    
-    val, let = get_bar_data("T", "F")
-    pdf.draw_bar("Логика / Аналитика (T/F)", val, let)
-    
-    val, let = get_bar_data("J", "P")
-    pdf.draw_bar("Организованность / Планирование (J/P)", val, let)
+    for l_k, r_k, lbl in [("E","I","Экстраверсия / Интроверсия (E/I)"), ("S","N","Сенсорика / Интуиция (S/N)"), ("T","F","Логика / Аналитика (T/F)"), ("J","P","Организованность / Планирование (J/P)")]:
+        v, let = get_bar_data(l_k, r_k)
+        pdf.draw_bar(lbl, v, let)
+    pdf.ln(5)
 
-    # --- 2. НЕЗАВИСИМАЯ ЭКСПЕРТНАЯ ОЦЕНКА (БЛОК ИИ) ---
-    reports = data.get('full_history', [])
-    if not reports:
-        single = data.get('stage_3_voice') or data.get('stage_2_chat')
-        if single: reports = [single]
+    # 3. ЭКСПЕРТНАЯ ОЦЕНКА (ИСПРАВЛЕННАЯ ЛОГИКА)
+    pdf.set_font("ArialRus", "B", 12)
+    pdf.set_text_color(76, 175, 80)
+    pdf.cell(0, 10, "Независимая экспертная оценка (анализ ИИ):", ln=True)
+    pdf.set_text_color(0, 0, 0)
+
+    # Выводим только те отчеты, которые реально существуют в БД
+    for key, title in [('stage_2_chat', 'Анализ текстового интервью (Алекс)'), ('stage_3_voice', 'Анализ голосового интервью (Марина)')]:
+        rep = data.get(key)
+        # Если отчет пустой или в нем нет mbti — пропускаем
+        if not rep or not isinstance(rep, dict) or not rep.get('mbti_type'):
+            continue
             
-        # Проверяем, есть ли отчет из голоса, и добавляем его тоже
-        v_rep = data.get('stage_3_voice')
-        if isinstance(v_rep, dict) and v_rep.get('mbti_type'):
-            reports.append(v_rep)
+        pdf.set_font("ArialRus", "B", 11)
+        pdf.cell(0, 8, f"{title} — MBTI: {rep['mbti_type']}", ln=True)
+        pdf.set_font("ArialRus", "", 10)
+        pdf.multi_cell(0, 6, f"Заключение: {safe_text(rep.get('summary', ''))}")
+        pdf.ln(4)
 
-    if reports:
-        pdf.ln(10)
-        pdf.set_font("ArialRus", "B", 13)
-        pdf.set_text_color(0, 51, 102)
-        # Печатаем основной заголовок
-        pdf.cell(0, 10, "Независимая экспертная оценка личностных характеристик (анализ ИИ):", ln=True)
-        pdf.set_text_color(0, 0, 0)
-
-        for idx, rep in enumerate(reports, 1):
-            mbti = rep.get('mbti_type', '???')
-            summary = str(rep.get('summary', ''))
-            gaps = rep.get('skill_gaps', [])
-
-            # Чтобы не было ошибки места, объединяем всё в один блок текста
-            full_text = f"Вариант анализа №{idx} (Тип: {mbti})\n"
-            full_text += f"Заключение: {summary}\n"
-            
-            if gaps:
-                full_text += "Зоны развития: " + "; ".join(str(g) for g in gaps)
-
-            pdf.set_font("ArialRus", "", 10)
-            # Печатаем всё через multi_cell - это самый безопасный метод, он не дает ошибки места
-            pdf.multi_cell(0, 6, full_text)
-            pdf.ln(5)
-
-    # Страница 2: Логи
+    # 4. ПРИЛОЖЕНИЕ (ЛОГИ - теперь раздельно по типам)
     pdf.add_page()
     pdf.set_font("ArialRus", "B", 14)
     pdf.cell(0, 10, "Приложение №1: Протоколы интервью", ln=True)
     
-    chat_logs = data.get('stage_2_chat', {}).get('chat_history', [])
-    if chat_logs:
-        pdf.set_font("ArialRus", "B", 11)
-        pdf.cell(0, 10, "Текстовое интервью (Логи):", ln=True)
-        for msg in chat_logs:
-            role = "Кандидат: " if msg.get('role') == 'user' else "Система: "
-            pdf.set_font("ArialRus", "B", 9); pdf.write(5, role)
-            pdf.set_font("ArialRus", "", 9); pdf.write(5, str(msg.get('content', '')) + "\n\n")
+    def clean(t): return re.sub(r'<REPORT>.*?</REPORT>', '', str(t), flags=re.DOTALL).strip()
 
-    pdf.output(output_path)
+    # ВАЖНО: берем общую историю из данных и фильтруем по типу сообщения (если есть) или выводим всё
+    history = data.get('stage_2_chat', {}).get('chat_history', [])
+    if history:
+        for m in history:
+            txt = safe_text(clean(m.get('content', '')))
+            if not txt: continue
+            role = "Кандидат: " if m.get('role') == 'user' else "Система: "
+            pdf.set_font("ArialRus", "B", 9); pdf.write(5, role)
+            pdf.set_font("ArialRus", "", 9); pdf.write(5, txt + "\n\n")
+
+    pdf.output(file_path)

@@ -171,7 +171,8 @@ async def chat_with_akmeolog(
 
     # 2. Логика сохранения сообщения (если не техническая команда)
     if "Начни диалог" not in message_text:
-        db.add(models.ChatMessage(user_id=user_id, role="user", content=message_text))
+        #db.add(models.ChatMessage(user_id=user_id, role="user", content=message_text))
+        db.add(models.ChatMessage(user_id=user_id, role="user", content=message_text, chat_type="text"))
         db.commit()
 
     # 3. Загружаем историю из базы
@@ -198,7 +199,8 @@ async def chat_with_akmeolog(
         raw_text = response.choices[0].message.content
         usage = response.usage
 
-        db.add(models.ChatMessage(user_id=user_id, role="assistant", content=raw_text))
+        #db.add(models.ChatMessage(user_id=user_id, role="assistant", content=raw_text))
+        db.add(models.ChatMessage(user_id=user_id, role="assistant", content=raw_text, chat_type="text"))
         db.commit()
 
         # 5. Считаем кеш и стоимость
@@ -348,7 +350,8 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                 db = database.SessionLocal()
                                 try:
                                     # Сохраняем вашу реплику в базу
-                                    new_msg = models.ChatMessage(user_id=user_id, role="user", content=user_text)
+                                    #new_msg = models.ChatMessage(user_id=user_id, role="user", content=user_text)
+                                    new_msg = models.ChatMessage(user_id=user_id, role="user", content=user_text, chat_type="voice")
                                     db.add(new_msg)
                                     db.commit()
                                 finally:
@@ -364,7 +367,8 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                 # Сохраняем её реплику в базу
                                 db = database.SessionLocal()
                                 try:
-                                    new_msg = models.ChatMessage(user_id=user_id, role="assistant", content=ai_text)
+                                    #new_msg = models.ChatMessage(user_id=user_id, role="assistant", content=ai_text)
+                                    new_msg = models.ChatMessage(user_id=user_id, role="assistant", content=ai_text, chat_type="voice")
                                     db.add(new_msg)
                                     db.commit()
                                 finally:
@@ -389,11 +393,11 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                             
                                             db = database.SessionLocal()
                                             try:
-                                                db.add(models.ChatMessage(user_id=user_id, role="assistant", content=f"<REPORT>{clean_report}</REPORT>"))
+                                                db.add(models.ChatMessage(user_id=user_id, role="assistant", content=f"<REPORT>{clean_report}</REPORT>", chat_type="voice"))
                                                 db.commit()
                                                 print("🎯 MARIN: Отчет успешно перехвачен и сохранен!")
                                             finally:
-                                                db.close()
+                                                db.close()                                                                                
                                             await websocket.send_json({"type": "final_report", "text": clean_report})
                             # Расчет стоимости
                             usage = resp.get("usage", {})
