@@ -90,11 +90,8 @@ def create_pdf_report(data: dict, output_path: str):
     # --- 2. НЕЗАВИСИМАЯ ЭКСПЕРТНАЯ ОЦЕНКА (БЛОК ИИ) ---
     reports = data.get('full_history', [])
     if not reports:
-        reports = []
-        # Проверяем, есть ли отчет из чата, и добавляем его
-        c_rep = data.get('stage_2_chat')
-        if isinstance(c_rep, dict) and c_rep.get('mbti_type'):
-            reports.append(c_rep)
+        single = data.get('stage_3_voice') or data.get('stage_2_chat')
+        if single: reports = [single]
             
         # Проверяем, есть ли отчет из голоса, и добавляем его тоже
         v_rep = data.get('stage_3_voice')
