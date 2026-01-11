@@ -196,10 +196,22 @@ const VoiceChatScreen = ({ user, onBack }) => {
 
                 <section className="space-y-4 pt-8 border-t border-white/5">
                     <p className="text-[10px] font-black text-green-500 tracking-[0.2em]">SESSION METRICS</p>
+
                     <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">TOKENS</span>
-                        <span className="font-bold">{totalStats.input + totalStats.output}</span>
+                        <span className="text-gray-500 uppercase tracking-tighter">Input Tokens</span>
+                        <span className="font-bold text-white">{totalStats.input}</span>
                     </div>
+
+                    <div className="flex justify-between text-xs">
+                        <span className="text-gray-500 uppercase tracking-tighter">Cached (Saving)</span>
+                        <span className="font-bold text-blue-400">{totalStats.cached}</span>
+                    </div>
+
+                    <div className="flex justify-between text-xs">
+                        <span className="text-gray-500 uppercase tracking-tighter">Output Tokens</span>
+                        <span className="font-bold text-white">{totalStats.output}</span>
+                    </div>
+
                     <div className="bg-green-500/5 border border-green-500/10 p-5 rounded-2xl text-center">
                         <p className="text-[9px] text-gray-400 uppercase mb-1">Session Cost</p>
                         <p className="text-2xl font-black text-green-500">${totalStats.cost.toFixed(4)}</p>
