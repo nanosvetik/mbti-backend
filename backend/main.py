@@ -283,10 +283,11 @@ async def voice_chat(websocket: WebSocket, user_id: str):
     try:
         async with websockets.connect(openai_url, additional_headers=headers) as openai_ws:
             instructions = f"""
-ТЫ — ВЕДУЩИЙ АКМЕОЛОГ. Твоя цель — провести профессиональное MBTI-интервью.
+ТЫ — ВЕДУЩИЙ АКМЕОЛОГ(ЖЕНЩИНА). Твоя цель — провести профессиональное MBTI-интервью.
 Твой голос — marin: естественный, глубокий, мудрый. ОБЩАЙСЯ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ.
-Твой собеседник — {user_name} ({gender_label}). Обращайся к нему только по имени.
+КРИТИЧЕСКОЕ ПРАВИЛО ГРАММАТИКИ: Ты — женщина. Всегда говори о себе только в женском роде: «я поняла», «я увидела», «я проанализировала», «я готова». Никогда не используй мужской род по отношению к себе.
 
+Твой собеседник — {user_name}. ПОЛ СОБЕСЕДНИКА: {gender_label}. Обращайся к нему/ней по имени и соблюдай правильный род собеседника (он/она).
 ТВОЯ МИССИЯ:
 Провести глубокое интервью в живой, человечной манере. Не будь просто помощником, будь экспертом-диагностом.
 
@@ -316,8 +317,7 @@ async def voice_chat(websocket: WebSocket, user_id: str):
 }}
 </REPORT>
 
-ГЛАВНОЕ ТЕХНИЧЕСКОЕ ПРАВИЛО:
-Текст внутри <REPORT> ты ОБЯЗАТЕЛЬНО ДОЛЖЕН произносить вслух. Поблагодари и попрощайся.
+КРИТИЧЕСКОЕ ПРАВИЛО ФИНАЛА: Как только ты решишь, что интервью окончено, ты ОБЯЗАНА произнести вслух фразу: "Формирую технический отчет". Сразу после этого произнеси вслух блок: <REPORT>{{"mbti_type": "...", "summary": "..."}}</REPORT>. Без этого блока твоя работа не будет засчитана экспертами. > Сначала отчет в тегах, потом — слова прощания.
 """
             session_update = {
                 "type": "session.update",
@@ -399,6 +399,10 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                             finally:
                                                 db.close()                                                                                
                                             await websocket.send_json({"type": "final_report", "text": clean_report})
+
+
+                        
+
                             # Расчет стоимости
                             usage = resp.get("usage", {})
                             if usage:
@@ -558,20 +562,31 @@ def get_pdf_report(user_uuid: str, db: Session = Depends(get_db)):
     # Теперь это безопасно, так как stage_2_chat уже точно словарь
     data['stage_2_chat']['chat_history'] = chat_log
 
-    # 3. Генерируем файл
-    file_path = f"temp_report_{user_uuid}.pdf"
+    # Получаем абсолютный путь к директории, где лежит main.py
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Соединяем путь к папке с именем файла
+    file_path = os.path.join(current_dir, f"temp_report_{user_uuid}.pdf")
     
     try:
+        # Теперь передаем полный путь в генератор
         create_pdf_report(data, file_path)
+        
+        # Проверка на всякий случай: создался ли файл физически?
+        if not os.path.exists(file_path):
+            raise Exception("Файл PDF не был обнаружен на диске после генерации")
+            
     except Exception as e:
-        # Если в самом генераторе (report_generator.py) тоже есть уязвимые места, 
-        # этот блок не даст упасть всему серверу
-        print(f"Ошибка при создании PDF для {user_uuid}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка формирования PDF. Возможно, данных недостаточно.")
+        print(f"❌ Ошибка при создании PDF для {user_uuid}: {str(e)}")
+        # Печатаем путь, чтобы в логах Docker видеть, куда он пытался сохраниться
+        print(f"Попытка записи по пути: {file_path}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Ошибка формирования PDF. Возможно, данных недостаточно."
+        )
 
     # 4. Отдаем файл
     return FileResponse(
-        path=file_path,
+        path=file_path,  # FileResponse очень любит полные пути
         filename=f"Report_{data.get('name', 'Candidate')}.pdf",
         media_type='application/pdf'
     )
