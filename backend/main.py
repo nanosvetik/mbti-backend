@@ -1,5 +1,7 @@
 import os
 import json
+import logging  
+import sys
 import re
 import asyncio
 import websockets
@@ -15,6 +17,13 @@ from sqlalchemy.orm import Session
 from . import models, schemas, database
 from .prompts import SYSTEM_PROMPT
 from backend.services.report_generator import create_pdf_report
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("HR_SYSTEM")
 
 # 1. Загружаем переменные из .env (локально)
 load_dotenv()
@@ -199,7 +208,6 @@ async def chat_with_akmeolog(
         raw_text = response.choices[0].message.content
         usage = response.usage
 
-        #db.add(models.ChatMessage(user_id=user_id, role="assistant", content=raw_text))
         db.add(models.ChatMessage(user_id=user_id, role="assistant", content=raw_text, chat_type="text"))
         db.commit()
 
@@ -228,17 +236,17 @@ async def chat_with_akmeolog(
                 # План А: Чистый JSON
                 report_data = json.loads(content)
                 is_final = True
-                print("🎉 УСПЕХ: Отчет распарсен!")
+                logger.info("🎉 УСПЕХ: Отчет распарсен!")
             except Exception:
                 try:
                     # План Б: Если всё еще капризничает
                     import ast
                     report_data = ast.literal_eval(content)
                     is_final = True
-                    print("🚀 Сработал План Б")
+                    logger.info("🚀 Сработал План Б")
                 except Exception as e:
-                    print(f"💀 Ошибка парсинга: {e}")
-                    print(f"Текст отчета был: {content}")
+                    logger.error(f"💀 Ошибка парсинга: {e}")
+                    logger.error(f"Текст отчета был: {content}")
 
         # 7. ВОЗВРАТ ДАННЫХ
         return {
@@ -255,7 +263,7 @@ async def chat_with_akmeolog(
         }
 
     except Exception as e:
-        print(f"💥 Ошибка OpenAI: {e}")
+        logger.error(f"💥 Ошибка OpenAI: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. ГОЛОСОВОЙ ЧАТ (MARIN) С КЕШИРОВАНИЕМ И ЗАЩИТОЙ ---
@@ -303,7 +311,7 @@ async def voice_chat(websocket: WebSocket, user_id: str):
 
 ИНСТРУКЦИЯ ПО ОТЧЕТУ:
 В финале ты ОБЯЗАН прислать JSON строго в формате:
-<REPORT>
+<MARIN_REPORT>
 {{
   "mbti_type": "ENTP",
   "metrics": {{
@@ -315,9 +323,9 @@ async def voice_chat(websocket: WebSocket, user_id: str):
   "summary": "Краткий разбор...",
   "skill_gaps": ["Рекомендация 1", "Рекомендация 2"]
 }}
-</REPORT>
+</MARIN_REPORT>
 
-КРИТИЧЕСКОЕ ПРАВИЛО ФИНАЛА: Как только ты решишь, что интервью окончено, ты ОБЯЗАНА произнести вслух фразу: "Формирую технический отчет". Сразу после этого произнеси вслух блок: <REPORT>{{"mbti_type": "...", "summary": "..."}}</REPORT>. Без этого блока твоя работа не будет засчитана экспертами. > Сначала отчет в тегах, потом — слова прощания.
+КРИТИЧЕСКОЕ ПРАВИЛО ФИНАЛА: Как только ты решишь, что интервью окончено, ты ОБЯЗАНА произнести вслух фразу: "Формирую технический отчет". Сразу после этого произнеси вслух блок: <MARIN_REPORT>{{"mbti_type": "...", "summary": "..."}}</MARIN_REPORT>. Без этого блока твоя работа не будет засчитана экспертами. > Сначала отчет в тегах, потом — слова прощания.
 """
             session_update = {
                 "type": "session.update",
@@ -349,8 +357,6 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                             if user_text:
                                 db = database.SessionLocal()
                                 try:
-                                    # Сохраняем вашу реплику в базу
-                                    #new_msg = models.ChatMessage(user_id=user_id, role="user", content=user_text)
                                     new_msg = models.ChatMessage(user_id=user_id, role="user", content=user_text, chat_type="voice")
                                     db.add(new_msg)
                                     db.commit()
@@ -361,19 +367,39 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                         elif event.get("type") == "response.audio_transcript.done":
                             ai_text = event.get("transcript", "").strip()
                             if ai_text:
-                                # Отправляем на фронт (пусть будет для логов)
+                                # 1. Отправляем на фронт
                                 await websocket.send_json({"type": "transcript", "text": ai_text})
-                                
-                                # Сохраняем её реплику в базу
+        
+                                # 2. ПРОВЕРЯЕМ: нет ли в её речи отчета?
+                                if "<MARIN_REPORT>" in ai_text:
+                                    try:
+                                        report_part = ai_text.split("<MARIN_REPORT>")[1].split("</MARIN_REPORT>")[0]
+                                        # Убираем двойные скобки, если они пришли из промпта
+                                        clean_report = report_part.replace("{{", "{").replace("}}", "}").strip()
+                
+                                        db_rep = database.SessionLocal()
+                                        # Сохраняем технический отчет как отдельное системное сообщение
+                                        db_rep.add(models.ChatMessage(
+                                            user_id=user_id, 
+                                            role="assistant", 
+                                            content=f"<MARIN_REPORT>{clean_report}</MARIN_REPORT>", 
+                                            chat_type="voice"
+                                        ))
+                                        db_rep.commit()
+                                        db_rep.close()
+                                        logger.info("🎯 MARIN: Отчет перехвачен из голосового потока!")
+                                    except Exception as e:
+                                        logger.error(f"❌ Ошибка парсинга голосового отчета: {e}")
+
+                                # 3. Сохраняем саму реплику в базу (для протокола)
                                 db = database.SessionLocal()
                                 try:
-                                    #new_msg = models.ChatMessage(user_id=user_id, role="assistant", content=ai_text)
                                     new_msg = models.ChatMessage(user_id=user_id, role="assistant", content=ai_text, chat_type="voice")
                                     db.add(new_msg)
                                     db.commit()
                                 finally:
                                     db.close()
-
+                                
                         # 4. ФИНАЛЬНЫЙ ОТЧЕТ И РАСЧЕТ СТОИМОСТИ
                         elif event.get("type") == "response.done":
                             resp = event.get("response", {})
@@ -386,14 +412,14 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                 for content in content_list:
                                     if content.get("type") == "text":
                                         full_text = content.get("text", "")
-                                        if "<REPORT>" in full_text:
+                                        if "<MARIN_REPORT>" in full_text:
                                             # Очистка и сохранение
-                                            report_part = full_text.split("<REPORT>")[1].split("</REPORT>")[0]
+                                            report_part = full_text.split("<MARIN_REPORT>")[1].split("</MARIN_REPORT>")[0]
                                             clean_report = report_part.replace("{{", "{").replace("}}", "}").strip()
                                             
                                             db = database.SessionLocal()
                                             try:
-                                                db.add(models.ChatMessage(user_id=user_id, role="assistant", content=f"<REPORT>{clean_report}</REPORT>", chat_type="voice"))
+                                                db.add(models.ChatMessage(user_id=user_id, role="assistant", content=f"<MARIN_REPORT>{clean_report}</MARIN_REPORT>", chat_type="voice"))
                                                 db.commit()
                                                 print("🎯 MARIN: Отчет успешно перехвачен и сохранен!")
                                             finally:
@@ -421,10 +447,10 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                                     "usage": {"input": in_t, "output": out_t, "cached": cached_t},
                                     "cost": cost
                                 })
-                                print(f"💰 Сессия: {cost:.4f}$")
+                                logger.info(f"💰 Сессия: {cost:.4f}$")
 
                 except Exception as e:
-                    print(f"Ошибка в listen_to_openai: {e}")
+                    logger.error(f"Ошибка в listen_to_openai: {e}")
 
             listen_task = asyncio.create_task(listen_to_openai())
 
@@ -448,12 +474,12 @@ async def voice_chat(websocket: WebSocket, user_id: str):
                 listen_task.cancel()
 
     except Exception as e:
-        print(f"💥 Критическая ошибка Voice Chat: {e}")
+        logger.error(f"💥 Критическая ошибка Voice Chat: {e}")
 
 
 @app.get("/debug/full-check/{user_id}")
 def debug_full_check(user_id: str, db: Session = Depends(get_db)):
-    # 1. Смотрим результат теста Оли
+    # 1. Смотрим ответы
     answers = db.query(models.UserAnswer).filter(models.UserAnswer.user_id == user_id).all()
     
     # 2. Смотрим ВСЕ сообщения от ассистента
@@ -501,26 +527,41 @@ def get_universal_report(user_uuid: str, db: Session = Depends(get_db)):
             )
             
             static_results = {**counts, "type": mbti_type}
-            print(f"DEBUG: Баллы успешно собраны из user_answers для {user_uuid}")
+            logger.info(f"DEBUG: Баллы успешно собраны из user_answers для {user_uuid}")
     except Exception as e:
-        print(f"DEBUG: Ошибка при сборке баллов: {e}")
+        logger.error(f"DEBUG: Ошибка при сборке баллов: {e}")
 
 
-    # 3. Собираем все отчеты из чат-сообщений (Stage 2 и 3)
-    chat_reports = []
-    # Сортируем сообщения по времени, чтобы отчеты шли по порядку (Алекс -> Марин)
+   # 3. Собираем отчеты раздельно по уникальным тегам
+
     ordered_messages = db.query(models.ChatMessage).filter(
         models.ChatMessage.user_id == user_uuid,
         models.ChatMessage.role == "assistant"
     ).order_by(models.ChatMessage.timestamp.asc()).all()
+    
+    alex_report = None
+    marin_report = None
 
     for msg in ordered_messages:
+        # Ищем Алекса (Stage 2)
         if "<REPORT>" in msg.content:
-            match = re.search(r'<REPORT>(.*?)</REPORT>', msg.content, re.DOTALL)
-            if match:
-                try:
-                    chat_reports.append(json.loads(match.group(1).strip()))
-                except:
+            m = re.search(r'<REPORT>(.*?)</REPORT>', msg.content, re.DOTALL)
+            if m:
+                try: alex_report = json.loads(m.group(1).strip())
+                except: continue
+        
+        # Ищем Марину (Stage 3) - обрабатываем даже "грязный" ответ Юли
+        if "MARIN_REPORT" in msg.content:
+            # Ищем текст между словами MARIN_REPORT, игнорируя наличие скобок < >
+            m = re.search(r'MARIN_REPORT(.*?)(?:MARIN_REPORT|$)', msg.content, re.DOTALL)
+            if m:
+                report_str = m.group(1).strip().strip('"').strip()
+                # "Доводчик" скобок: если Марина их забыла, добавляем
+                if not report_str.startswith("{"): report_str = "{" + report_str
+                if not report_str.endswith("}"): report_str = report_str + "}"
+                try: 
+                    marin_report = json.loads(report_str)
+                except: 
                     continue
 
     # 4. Формируем финальный пакет данных
@@ -528,16 +569,15 @@ def get_universal_report(user_uuid: str, db: Session = Depends(get_db)):
         "user_id": user_uuid,
         "name": user_record.name,
         "gender": user_record.gender,
-        "stage_1_static": static_results, # Те самые {"E":0, "I":14...}
-        "stage_2_chat": chat_reports[0] if len(chat_reports) > 0 else None,
-        "stage_3_voice": chat_reports[-1] if len(chat_reports) > 1 else None,
-        "full_history": chat_reports,
+        "stage_1_static": static_results,
+        "stage_2_chat": alex_report,  
+        "stage_3_voice": marin_report, 
+        "full_history": [r for r in [alex_report, marin_report] if r],
         "summary": {
-            "is_complete": len(chat_reports) >= 2 and static_results is not None,
-            "total_reports_found": len(chat_reports)
+            "is_complete": alex_report is not None and marin_report is not None,
+            "total_reports_found": (1 if alex_report else 0) + (1 if marin_report else 0)
         }
     }
-
 @app.get("/api/v1/user-report/{user_uuid}/pdf")
 def get_pdf_report(user_uuid: str, db: Session = Depends(get_db)):
     # 1. Получаем базовые данные
@@ -576,9 +616,9 @@ def get_pdf_report(user_uuid: str, db: Session = Depends(get_db)):
             raise Exception("Файл PDF не был обнаружен на диске после генерации")
             
     except Exception as e:
-        print(f"❌ Ошибка при создании PDF для {user_uuid}: {str(e)}")
+        logger.error(f"❌ Ошибка при создании PDF для {user_uuid}: {str(e)}")
         # Печатаем путь, чтобы в логах Docker видеть, куда он пытался сохраниться
-        print(f"Попытка записи по пути: {file_path}")
+        logger.info(f"Попытка записи по пути: {file_path}")
         raise HTTPException(
             status_code=500, 
             detail="Ошибка формирования PDF. Возможно, данных недостаточно."

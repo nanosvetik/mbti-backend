@@ -69,45 +69,40 @@ def create_pdf_report(data: dict, file_path: str):
             return (int((l_v/total)*100), l_k) if l_v >= r_v else (int((r_v/total)*100), r_k)
         except: return 50, ""
 
-    for l_k, r_k, lbl in [("E","I","Экстраверсия / Интроверсия (E/I)"), ("S","N","Сенсорика / Интуиция (S/N)"), ("T","F","Логика / Аналитика (T/F)"), ("J","P","Организованность / Планирование (J/P)")]:
+    for l_k, r_k, lbl in [("E","I","Экстраверсия / Интроверсия (E/I)"), ("S","N","Сенсорика / Интуиция (S/N)"), ("T","F","Логика / Этика (T/F)"), ("J","P","Организованность / Планирование (J/P)")]:
         v, let = get_bar_data(l_k, r_k)
         pdf.draw_bar(lbl, v, let)
     pdf.ln(5)
 
-    # 3. ЭКСПЕРТНАЯ ОЦЕНКА (ИСПРАВЛЕННАЯ ЛОГИКА)
-    pdf.set_font("ArialRus", "B", 12)
-    pdf.set_text_color(76, 175, 80)
-    pdf.cell(0, 10, "Независимая экспертная оценка (анализ ИИ):", ln=True)
-    pdf.set_text_color(0, 0, 0)
-
-    # Выводим только те отчеты, которые реально существуют в БД
-    for key, title in [('stage_2_chat', 'Анализ текстового интервью (Алекс)'), ('stage_3_voice', 'Анализ голосового интервью (Марина)')]:
-        rep = data.get(key)
-        # Если отчет пустой или в нем нет mbti — пропускаем
-        if not rep or not isinstance(rep, dict) or not rep.get('mbti_type'):
-            continue
-            
-        pdf.set_font("ArialRus", "B", 11)
-        pdf.cell(0, 8, f"{title} — MBTI: {rep['mbti_type']}", ln=True)
-        pdf.set_font("ArialRus", "", 10)
-        pdf.multi_cell(0, 6, f"Заключение: {safe_text(rep.get('summary', ''))}")
-        pdf.ln(4)
-
-    # 4. ПРИЛОЖЕНИЕ (ЛОГИ - теперь раздельно по типам)
+   # --- ОБЪЕДИНЕННАЯ СЕКЦИЯ: ЭКСПЕРТИЗА + ЛОГИ ---
     pdf.add_page()
     pdf.set_font("ArialRus", "B", 14)
-    pdf.cell(0, 10, "Приложение №1: Протоколы интервью", ln=True)
-    
-    def clean(t): return re.sub(r'<REPORT>.*?</REPORT>', '', str(t), flags=re.DOTALL).strip()
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 10, "Независимая экспертная оценка (анализ ИИ) и протоколы интервью", ln=True)
+    pdf.ln(5)
 
-    # ВАЖНО: берем общую историю из данных и фильтруем по типу сообщения (если есть) или выводим всё
+    # Берем историю сообщений
+    # Мы берем её из stage_2_chat, так как там лежит полная стенограмма
     history = data.get('stage_2_chat', {}).get('chat_history', [])
+    
     if history:
         for m in history:
-            txt = safe_text(clean(m.get('content', '')))
-            if not txt: continue
+            content = m.get('content', '')
+            
+            # Мы НИЧЕГО не удаляем (даже технические MARIN_REPORT), 
+            # чтобы данные точно не пропали
+            txt = safe_text(str(content))
+            
+            if not txt.strip():
+                continue
+                
             role = "Кандидат: " if m.get('role') == 'user' else "Система: "
-            pdf.set_font("ArialRus", "B", 9); pdf.write(5, role)
-            pdf.set_font("ArialRus", "", 9); pdf.write(5, txt + "\n\n")
+            
+            # Оформляем красиво
+            pdf.set_font("ArialRus", "B", 9)
+            pdf.write(5, role)
+            
+            pdf.set_font("ArialRus", "", 9)
+            pdf.write(5, txt + "\n\n")
 
     pdf.output(file_path)
