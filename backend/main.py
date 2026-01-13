@@ -57,13 +57,14 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://192.168.0.105:5173",
         "https://frontend-one-ebon-2mxpz6klja.vercel.app",
-        "https://mbti-agent-sveta.vercel.app",  # Ваш новый фронтенд!
+        "https://mbti-agent-sveta.vercel.app",
+        "http://144.124.253.147:5173",  # <-- ВОТ ЭТО МЫ ДОБАВИЛИ (ваш сервер)
+        "http://144.124.253.147",       # И на всякий случай просто IP
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 models.Base.metadata.create_all(bind=database.engine)
 
 def get_db():
