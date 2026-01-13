@@ -26,7 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger("HR_SYSTEM")
 
 # 1. Загружаем переменные из .env (локально)
-load_dotenv()
+load_dotenv(override=False)
 
 # 2. Получаем ключ из системы (и для локальной работы, и для Render)
 api_key = os.getenv("OPENAI_API_KEY")
