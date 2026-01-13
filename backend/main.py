@@ -31,6 +31,13 @@ load_dotenv()
 # 2. Получаем ключ из системы (и для локальной работы, и для Render)
 api_key = os.getenv("OPENAI_API_KEY")
 
+if not api_key:
+    logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Ключ OpenAI не найден! Приложение не сможет работать.")
+else:
+    # Мы выводим только первые 4 символа для проверки, остальное скрываем
+    masked_key = api_key[:4] + "****" + api_key[-4:] if len(api_key) > 8 else "****"
+    logger.info(f"✅ Ключ OpenAI успешно загружен (маска: {masked_key})")
+
 # 3. Инициализируем клиент OpenAI
 client = OpenAI(api_key=api_key)
 

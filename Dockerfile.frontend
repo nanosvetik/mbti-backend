@@ -1,0 +1,22 @@
+FROM node:22-slim
+
+WORKDIR /app
+
+# Устанавливаем легкий сервер для раздачи статики
+RUN npm install -g serve
+
+# Копируем зависимости
+COPY frontend/package*.json ./
+RUN npm install
+
+# Копируем весь код фронтенда
+COPY frontend/ .
+
+# Собираем проект в папку 'dist'
+RUN npm run build
+
+# Открываем порт для сайта
+EXPOSE 5173
+
+# Запускаем сервер, который просто отдает файлы из папки dist
+CMD ["serve", "-s", "dist", "-l", "5173"]
