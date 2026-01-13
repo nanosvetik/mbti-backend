@@ -1,40 +1,45 @@
 version: '3.8'
 
 services:
-  # 1. Наша база данных
   db:
     image: postgres:15
     container_name: mbti_db
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: ${POSTGRES_DB:-mbti_db}
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # 2. Наш бэкенд (Python + FastAPI)
   backend:
-    build: .
+    build:
+      context: . # На GitHub здесь точка, а в Portainer будет ссылка
+      dockerfile: Dockerfile
     container_name: mbti_backend
+    restart: always
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       - db
 
-  # 3. Наш фронтенд (React + Vite)
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        - VITE_API_URL=http://144.124.253.147:8001
     container_name: mbti_frontend
+    restart: always
     ports:
       - "5173:5173"
+    environment:
+      VITE_API_URL: "http://144.124.253.147:8001"
     depends_on:
       - backend
+
 volumes:
   postgres_data:
