@@ -35,11 +35,11 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        - VITE_API_URL=https://marinka-ai.ru/api # Сделаем красиво через подпапку или домен
+        - VITE_API_URL=https://api.marinka-ai.ru
     container_name: mbti_frontend
     restart: always
-    ports:
-      - "5173:5173"
+    environment:
+      VITE_API_URL: "https://api.marinka-ai.ru"
     networks:
       - mbti_network
 
