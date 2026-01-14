@@ -49,17 +49,15 @@ PRICES = {
 
 app = FastAPI()
 
-# Обновленный список разрешенных адресов для CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://192.168.0.105:5173",
-        "https://frontend-one-ebon-2mxpz6klja.vercel.app",
-        "https://mbti-agent-sveta.vercel.app",
-        "http://144.124.253.147:5173",  # <-- ВОТ ЭТО МЫ ДОБАВИЛИ (ваш сервер)
-        "http://144.124.253.147",       # И на всякий случай просто IP
+        "https://marinka-ai.ru",          # <--- ВАЖНО: ваш сайт
+        "https://www.marinka-ai.ru",      # На всякий случай
+        "https://api.marinka-ai.ru",      # Ваш API
+        "http://144.124.253.147",         # Ваш IP (пусть будет)
     ],
     allow_credentials=True,
     allow_methods=["*"],
